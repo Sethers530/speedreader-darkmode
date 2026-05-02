@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dark Mode Speed Reader</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: #121212;
+            color: #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+            margin: 0;
+        }
+        h1 {
+            color: #ffffff;
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+        #reader-container {
+            width: 100%;
+            max-width: 600px;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        #display-area {
+            height: 150px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #1e1e1e;
+            border-radius: 8px;
+            border: 1px solid #333;
+            font-size: 3.5rem;
+            font-weight: bold;
+            text-align: center;
+            padding: 1rem;
+            color: #ffffff;
+        }
+        textarea {
+            width: 100%;
+            height: 150px;
+            background-color: #1e1e1e;
+            color: #e0e0e0;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 1rem;
+            box-sizing: border-box;
+            font-size: 1rem;
+            resize: vertical;
+        }
+        textarea:focus {
+            outline: none;
+            border-color: #6200ea;
+        }
+        .controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        button {
+            background-color: #3700b3;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #5600e8;
+        }
+        button:disabled {
+            background-color: #333;
+            color: #777;
+            cursor: not-allowed;
+        }
+        .setting {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: bold;
+            background-color: #1e1e1e;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            border: 1px solid #333;
+        }
+        input[type="number"] {
+            width: 70px;
+            padding: 0.25rem;
+            background-color: #121212;
+            color: #fff;
+            border: 1px solid #444;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+        input[type="checkbox"] {
+            accent-color: #6200ea;
+            width: 1.2rem;
+            height: 1.2rem;
+            cursor: pointer;
+        }
+        input[type="number"]:focus {
+            outline: none;
+            border-color: #6200ea;
+        }
+        .toggles-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <h1>Dark Mode Speed Reader</h1>
+    <div id="reader-container">
+        <textarea id="text-input" placeholder="Paste the text you want to read here..."></textarea>
+        
+        <div class="toggles-row">
+            <div class="setting">
+                <label for="wpm">WPM:</label>
+                <input type="number" id="wpm" value="300" min="50" max="1000" step="10">
+            </div>
+            <div class="setting">
+                <input type="checkbox" id="skip-stopwords">
+                <label for="skip-stopwords" style="cursor: pointer;">Skip "the, a, an"</label>
+            </div>
+            <div class="setting">
+                <input type="checkbox" id="bible-mode">
+                <label for="bible-mode" style="cursor: pointer;">Bible Mode (Skip Numbers)</label>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button id="start-btn">Start</button>
+            <button id="pause-btn" disabled>Pause</button>
+            <button id="reset-btn">Reset</button>
+        </div>
+
+        <div id="display-area">Ready</div>
+    </div>
+
+    <script>
+        let words = [];
+        let currentIndex = 0;
+        let timer = null;
+        let isPlaying = false;
+
+        const stopWords = new Set(['the', 'a', 'an', 'and', 'of', 'to', 'in', 'is', 'it']);
+
+        const textInput = document.getElementById('text-input');
+        const displayArea = document.getElementById('display-area');
+        const wpmInput = document.getElementById('wpm');
+        const skipToggle = document.getElementById('skip-stopwords');
+        const bibleToggle = document.getElementById('bible-mode');
+        const startBtn = document.getElementById('start-btn');
+        const pauseBtn = document.getElementById('pause-btn');
+        const resetBtn = document.getElementById('reset-btn');
+
+        function cleanWord(word) {
+            return word.toLowerCase().replace(/[^a-z]/g, '');
+        }
+
+        // Checks if a string consists entirely of digits and punctuation (e.g. "14", "[15]", "3:")
+        function isVerseNumber(word) {
+            return /^[\d\W]+$/.test(word);
+        }
+
+        function startReading() {
+            if (words.length === 0) {
+                const text = textInput.value.trim();
+                if (!text) {
+                    displayArea.textContent = 'Paste text first!';
+                    displayArea.style.fontSize = '2rem';
+                    return;
+                }
+                words = text.split(/\s+/);
+                displayArea.style.fontSize = '3.5rem';
+            }
+            
+            if (currentIndex >= words.length) {
+                currentIndex = 0;
+            }
+
+            isPlaying = true;
+            startBtn.disabled = true;
+            pauseBtn.disabled = false;
+            textInput.disabled = true; 
+
+            const wpm = parseInt(wpmInput.value, 10) || 300;
+            const interval = 60000 / wpm;
+
+            timer = setInterval(() => {
+                const shouldSkipStopwords = skipToggle.checked;
+                const shouldSkipBible = bibleToggle.checked;
+
+                // Fast-forward loop to check if we should skip the current word
+                while (currentIndex < words.length) {
+                    let skipThisWord = false;
+                    const currentWord = words[currentIndex];
+
+                    if (shouldSkipStopwords && stopWords.has(cleanWord(currentWord))) {
+                        skipThisWord = true;
+                    }
+                    
+                    if (shouldSkipBible && isVerseNumber(currentWord)) {
+                        skipThisWord = true;
+                    }
+
+                    if (skipThisWord) {
+                        currentIndex++;
+                    } else {
+                        break; // Stop fast-forwarding when we hit a word we actually want to read
+                    }
+                }
+
+                if (currentIndex >= words.length) {
+                    pauseReading();
+                    displayArea.textContent = 'Done!';
+                    currentIndex = 0; 
+                    return;
+                }
+
+                displayArea.textContent = words[currentIndex];
+                currentIndex++;
+                
+            }, interval);
+        }
+
+        function pauseReading() {
+            isPlaying = false;
+            clearInterval(timer);
+            startBtn.disabled = false;
+            pauseBtn.disabled = true;
+        }
+
+        function resetReading() {
+            pauseReading();
+            currentIndex = 0;
+            words = [];
+            displayArea.textContent = 'Ready';
+            displayArea.style.fontSize = '3.5rem';
+            textInput.disabled = false;
+        }
+
+        // Event Listeners
+        startBtn.addEventListener('click', startReading);
+        pauseBtn.addEventListener('click', pauseReading);
+        resetBtn.addEventListener('click', resetReading);
+    </script>
+</body>
+</html>
